@@ -131,7 +131,7 @@ extern void HttpPostToken( SlHttpServerEvent_t *pSlHttpServerEvent,
 #endif
 
 
-extern void otaSignalWLANConnect();
+extern void signalWLANConnect();
 extern void BlinkLed(LedNum LedInstance,unsigned short iBlinkCount, LedBlinkrate iBlinkRate);
 
 //*****************************************************************************
@@ -408,7 +408,7 @@ void SimpleLinkNetAppEventHandler(SlNetAppEvent_t *pNetAppEvent)
             /* 
             	 MqttIpAcquiredPostMsg();
             */
-            otaSignalWLANConnect();
+            signalWLANConnect();
 
 
         }

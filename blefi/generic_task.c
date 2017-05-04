@@ -66,7 +66,9 @@ void * blefiCfgData;
 bool is_blefiCfgReady = false;
 bool is_blefiCfgupdate = false;
 OsiSyncObj_t g_GWGenSyncObj;
-extern OsiSyncObj_t g_NetStatSyncObj;
+
+/* Net COnfig Sync Object */
+OsiSyncObj_t g_NetStatSyncObj;
 
 #define GENERIC_TASK_STACK_SIZE	2048
 #define GENERIC_TASK_FREQ_MS 250
@@ -1412,6 +1414,10 @@ void GW_GenericTask_Init()
   osi_SyncObjCreate(&g_GWConSyncObj);
   osi_SyncObjCreate(&g_GWUuidWSyncObj);
   
+  //
+  // Create sync object to signal Sl_Start and Wlan Connect complete
+  //
+  osi_SyncObjCreate(&g_NetStatSyncObj);
   /*Initialize Gateway Button*/
   //  Button2Init();
 
@@ -1535,6 +1541,15 @@ void enableAutoconnect()
 {
 	*(blefiCfgRec.autocon) = AUTO_CON_ENABLE;
 	UpdateBlefiCfg();
+}
+
+
+void signalWLANConnect()
+{
+	//
+	// Signal Wlan COnnect
+	//
+	osi_SyncObjSignal(&g_NetStatSyncObj);
 }
 
 //*****************************************************************************

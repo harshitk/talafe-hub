@@ -89,7 +89,7 @@
 // Global static variables
 //*****************************************************************************
 static OsiSyncObj_t g_OTAStatSyncObj;
-OsiSyncObj_t g_NetStatSyncObj;
+
 //static OsiSyncObj_t g_FactResetSyncObj;
 static OtaOptServerInfo_t g_otaOptServerInfo;
 static void *pvOtaApp;
@@ -448,11 +448,6 @@ void OTA_Init()
 {
 
   //
-  // Create sync object to signal Sl_Start and Wlan Connect complete
-  //
-  osi_SyncObjCreate(&g_NetStatSyncObj);
-
-  //
   // Create sync object to signal OTA start
   //
   osi_SyncObjCreate(&g_OTAStatSyncObj);
@@ -471,13 +466,6 @@ void OTA_Init()
 
 }
 
-void otaSignalWLANConnect()
-{
-	//
-	// Signal Wlan COnnect
-	//
-	osi_SyncObjSignal(&g_NetStatSyncObj);
-}
 
 int OtaDownload()
 {
