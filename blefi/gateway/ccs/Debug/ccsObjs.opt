@@ -1,0 +1,1 @@
+"./ble_central.obj" "./database.obj" "./gapbondmgr.obj" "./gateway_api.obj" "./gateway_cmds.obj" "./gateway_events.obj" "./gateway_task.obj" "C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/ti_rtos/ti_rtos_config/ccs/Default/configPkg/linker.cmd" 
