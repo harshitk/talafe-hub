@@ -576,20 +576,23 @@ int ConnectToServer()
     }
 
     lRetVal = sl_Recv(iSockID,len,sizeof(char)*2,0);
-    if (lRetVal < 0 ) {
+    if (lRetVal <= 0 ) {
 		sl_Close(iSockID);
     	Report("Read Data Error\n\r");
     	return -1;
 	}
-	else if (dataLen < 2)
-	{
-		sl_Close(iSockID);
-    	Report("Read Data LEN >2 %d\n\r", bufLen);	
-	}
-	
+
 	bufLen = len[0];
 	bufLen = (bufLen << 8) | len[1];
 	bufLen -= 2;
+	
+	if ( bufLen < 1)
+	{
+		sl_Close(iSockID);
+    	Report("Read Data LEN >2 %d\n\r", bufLen);
+	}
+	
+
 	
     Report("Data to be Read [%d] [%d] [%d] [%d]", len[0], len[1], lRetVal, bufLen);
 	
@@ -672,6 +675,7 @@ void GwGenericTask(void *pvParameters)
 	char *pkt;
 	unsigned int dataLen = 0, i = 0;
 	
+	volatile uint8 sockConn = 0; 
 	//struct Packet pkt;
 	
     osi_SyncObjWait(&g_NetStatSyncObj,OSI_WAIT_FOREVER); //Wait until the network is ON.
@@ -683,9 +687,11 @@ void GwGenericTask(void *pvParameters)
 	Report("Scanning DONE\n\r");
 	while (LoopVar) 
 	{
+		Report("Waiting for Server Connect EVENT\n\r");
 		osi_SyncObjWait(&g_GWConSyncObj,OSI_WAIT_FOREVER); //Wait until the Connetionn with Server is ON.
+		sockConn = 1;
 		
-		while(LoopVar)
+		while(sockConn)
 		{
 			static int timeout = 0;
 			
@@ -712,9 +718,10 @@ void GwGenericTask(void *pvParameters)
 		#endif
 		
 			lRetVal = sl_Recv(iSockID,pktLen,sizeof(char)*2,0);
-			if (lRetVal < 0) {
+			if (lRetVal <= 0) {
 				Report("Read Data Error\n\r");
 				sl_Close(iSockID); 
+				sockConn = 0;
 				break;
 			}
 			
@@ -726,22 +733,21 @@ void GwGenericTask(void *pvParameters)
 			if (dataLen)
 				dataLen -= 2;
 			else {
-				Report("Invalid data length \n\r");
-				sl_Close(iSockID); 
+				Report("Invalid data length \n\r"); 
 				break;
 			}
 			Report("Data to be Read [%d] [%d]\n\r", dataLen, pktLen[1]);
 
 			pkt = (char *)malloc(sizeof(char) * dataLen);
 			if (!pkt) {
-				Report("Malloc failed\n\r");
-				sl_Close(iSockID);       
+				Report("Malloc failed\n\r");       
 				break;
 			}
 			lRetVal = sl_Recv(iSockID,pkt,(sizeof(char)*dataLen),0);
-			if (lRetVal < 0) {
+			if (lRetVal <= 0) {
 				Report("Read Data Error\n\r");
-				sl_Close(iSockID);  
+				sl_Close(iSockID); 
+				sockConn = 0;				
 				free(pkt);
 				break;
 			}	
