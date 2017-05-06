@@ -128,7 +128,7 @@ unsigned int autoScanTimeout = 0;
 static struct sockaddr_in 	sAddr;
 static int 				iSockID;
 									  //192.168.1.5	//54.71.27.65
-unsigned long  		g_ulDestinationIP = 0x36471B41;//0xC0A80105; // 0xc0a3D9Fa;//0xC0A82BD0; // 0xAC140A07; // 0xC0A82BD0; // 0xc0a3D9Fa;  // 192.168.217.250
+unsigned long  		g_ulDestinationIP = 0xC0A80104; //0x36471B41;//0xC0A80105; // 0xc0a3D9Fa;//0xC0A82BD0; // 0xAC140A07; // 0xC0A82BD0; // 0xc0a3D9Fa;  // 192.168.217.250
 unsigned int   		g_uiPortNum = 5683;
 
 static uint8 is_KeepAliveAckRecv = 0;
@@ -530,23 +530,13 @@ int ConnectToServer()
 	char			buffer[50] = "XXXHUB1234567";
 
 	int i = 0;
-	_i32 rv = 0;
 	long lRetVal = -1;
-	struct SlTimeval_t tv, *p_tv;
+	//struct SlTimeval_t tv, *p_tv;
 	char len[2];
 	char *rcvBuf;
 	unsigned int bufLen = 0;
 	
-	tv.tv_sec = 3;
-	tv.tv_usec = 0;
-
 	iAddrSize = sizeof(SlSockAddrIn_t);
-
-	SlSockNonblocking_t enableOption;
-	enableOption.NonblockingEnabled = 0;
-	// Enable/disable nonblocking mode
-	sl_SetSockOpt(iSockID,SL_SOL_SOCKET,SL_SO_NONBLOCKING, (_u8 *)&enableOption,sizeof(enableOption));
-
 
 	// creating a TCP socket
 	iSockID = sl_Socket(SL_AF_INET,SL_SOCK_STREAM, 0);
@@ -586,10 +576,17 @@ int ConnectToServer()
     }
 
     lRetVal = sl_Recv(iSockID,len,sizeof(char)*2,0);
-    if (lRetVal < 0) {
+    if (lRetVal < 0 ) {
+		sl_Close(iSockID);
     	Report("Read Data Error\n\r");
     	return -1;
 	}
+	else if (dataLen < 2)
+	{
+		sl_Close(iSockID);
+    	Report("Read Data LEN >2 %d\n\r", bufLen);	
+	}
+	
 	bufLen = len[0];
 	bufLen = (bufLen << 8) | len[1];
 	bufLen -= 2;
@@ -614,11 +611,6 @@ int ConnectToServer()
     Report("\n\r");
 	free(rcvBuf);
 
-//	enableOption.NonblockingEnabled = 1;
-	// Enable/disable nonblocking mode
-//	sl_SetSockOpt(iSockID,SL_SOL_SOCKET,SL_SO_NONBLOCKING, (_u8 *)&enableOption,sizeof(enableOption));
-
-	
     return 0;
 }
 
