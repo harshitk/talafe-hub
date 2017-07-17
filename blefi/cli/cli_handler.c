@@ -51,6 +51,9 @@
 extern unsigned short int uuid_4_handle;
 extern unsigned short int uuid_1_handle;
 extern uint8 uuid_4_handle_found;
+extern unsigned short int uuid_2_handle;
+extern uint8 uuid_2_handle_found;
+
 
 extern int print_usage(cli_cmd_t *cmd);
 extern void CLI_puts(char *str);
@@ -480,7 +483,7 @@ int Test_cmd(cli_cmd_t *cmd,int argc,char *argv[])
 
 	if (argc > 1)
 	{
-		if (strncmp("G_Desc", argv[1], 6) == 0) {
+		if (strncmp("g_desc", argv[1], 6) == 0) {
 			unsigned short int connH = strtoul(argv[2],NULL,10);
 			unsigned short int startH = strtoul(argv[3],NULL,10);
 			unsigned short int endH = strtoul(argv[4],NULL,10);
@@ -488,8 +491,48 @@ int Test_cmd(cli_cmd_t *cmd,int argc,char *argv[])
 			
 			DB_GATT_FindCharDescs(connH, startH, endH);
 
-		} else if(strncmp("Lock", argv[1], 5) == 0) {
+		} else if(strncmp("lock", argv[1], 5) == 0) {
 			unsigned short int connH = strtoul(argv[2],NULL,10);
+			if (uuid_2_handle_found) {
+				unsigned char buffer[10];
+				int loop = 0;
+			
+				buffer[0] = '@';
+				buffer[1] = 0x11;
+				
+				memcpy(buffer+2, "12345617", 8);
+				
+				process_WriteHandle(connH, uuid_2_handle, buffer, 10);
+				Message("\r\nLock :- ");
+				for(loop = 0 ; loop < 10 ; loop++)
+					Report("[%x] ", buffer[loop]);
+				Message("\r\n");
+				
+			} else {
+				Message("\r\nERROR ");
+			}
+			
+
+		} else if(strncmp("unlock", argv[1], 5) == 0) {
+			unsigned short int connH = strtoul(argv[2],NULL,10);
+			if (uuid_2_handle_found) {
+				unsigned char buffer[10];
+				int loop = 0;
+			
+				buffer[0] = '@';
+				buffer[1] = 0x12;
+				
+				memcpy(buffer+2, "12345617", 8);
+				
+				process_WriteHandle(connH, uuid_2_handle, buffer, 10);
+				Message("\r\nLock :- ");
+				for(loop = 0 ; loop < 10 ; loop++)
+					Report("[%x] ", buffer[loop]);
+				Message("\r\n");
+				
+			} else {
+				Message("\r\nERROR ");
+			}
 			
 
 		} else if(strncmp("G_KEY", argv[1], 5) == 0) {

@@ -66,7 +66,7 @@ extern void SimpleLink_Init(void);
 extern void OTA_Init(void);
 extern void GW_GenericTask_Init(void);
 
-
+extern volatile uint8 cloud_connected; 
 
 #define BLEFI_VERSION 1
 //****************************************************************************
@@ -156,11 +156,19 @@ int main()
 	CLI_Init();
 
      // Start the task scheduler
- 	OTA_Init();
+ 	 //OTA_Init();
 
     // Start the task scheduler
     osi_start();
-    while(LoopVar);
+    while(LoopVar) {
+		
+		if (link_up) {
+			if (!cloud_connected){
+				talafe_connect_to_cloud();
+			}
+			osi_Sleep(10000);
+		}
+	}
 
     // we will never reach here
     return 0;

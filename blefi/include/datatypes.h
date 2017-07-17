@@ -190,10 +190,10 @@ typedef signed char   bStatus_t;
                    {\
                         ERR_PRINT(error_code);\
                         while(1) { ;\
-						/*	GPIO_IF_LedOn(MCU_ERROR_LED);\
+							GPIO_IF_LedOn(0x2);\
 							osi_Sleep(200);\
-							GPIO_IF_LedOff(MCU_ERROR_LED);\
-							osi_Sleep(200);*/\
+							GPIO_IF_LedOff(0x2);\
+							osi_Sleep(200);\
 						}\
                  }\
             }

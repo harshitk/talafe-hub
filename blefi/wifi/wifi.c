@@ -94,8 +94,8 @@
 #define OSI_STACK_SIZE                   2048
 #define AP_SSID_LEN_MAX                 32
 #define SH_GPIO_3                       3       /* P58 - Device Mode */
-#define AUTO_CONNECTION_TIMEOUT_COUNT   20      /*  Sec */
-#define SMART_CONFIG_TIMEOUT_COUNT   	50     /* 10 Sec */
+#define AUTO_CONNECTION_TIMEOUT_COUNT   40      /*  Sec */
+#define SMART_CONFIG_TIMEOUT_COUNT   	15     /* 10 Sec */
 #define SL_STOP_TIMEOUT                 200
 #define SCAN_TABLE_SIZE           20
 
@@ -131,7 +131,8 @@ extern void HttpPostToken( SlHttpServerEvent_t *pSlHttpServerEvent,
 #endif
 
 
-extern void signalWLANConnect();
+extern void signalWlanConnectEvent();
+extern void signalWlanDisconnectEvent();
 extern void BlinkLed(LedNum LedInstance,unsigned short iBlinkCount, LedBlinkrate iBlinkRate);
 
 //*****************************************************************************
@@ -281,6 +282,8 @@ void SimpleLinkWlanEventHandler(SlWlanEvent_t *pWlanEvent)
             }
             memset(g_ucConnectionSSID,0,sizeof(g_ucConnectionSSID));
             memset(g_ucConnectionBSSID,0,sizeof(g_ucConnectionBSSID));
+			
+			signalWlanDisconnectEvent();
         }
         break;
 
@@ -408,7 +411,7 @@ void SimpleLinkNetAppEventHandler(SlNetAppEvent_t *pNetAppEvent)
             /* 
             	 MqttIpAcquiredPostMsg();
             */
-            signalWLANConnect();
+            signalWlanConnectEvent();
 
 
         }
@@ -641,7 +644,7 @@ ASSERT_ON_ERROR(lRetVal);
     UART_PRINT("\n\r[WiFi] Auto Connecting....");
 
  /* BELOW ><.><.>< LOGIC TO BE ADD IN BUTTON PRESS (SMART CONFIG) */	
-#if 0	 /* LOGIC TO BE ADD IN BUTTON PRESS (SMART CONFIG) */
+#if 1	 /* LOGIC TO BE ADD IN BUTTON PRESS (SMART CONFIG) */
     {
     	//waiting for the device to Auto Connect
         while(!IS_CONNECTED(g_ulStatus) || !IS_IP_ACQUIRED(g_ulStatus))

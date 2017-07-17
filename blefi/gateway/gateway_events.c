@@ -71,11 +71,13 @@ uint8 uuid_2_handle_found = 0;
 unsigned short int uuid_3_handle = 0;
 uint8 uuid_3_handle_found = 0;
 
-unsigned short int uuid_4_handle = 0;
-uint8 uuid_4_handle_found = 0;
+//#if OLD_D_CC2540
+	unsigned short int uuid_4_handle = 0;
+	uint8 uuid_4_handle_found = 0;
 
-unsigned short int uuid_5_handle = 0;
-uint8 uuid_5_handle_found = 0;
+	unsigned short int uuid_5_handle = 0;
+	uint8 uuid_5_handle_found = 0;
+//#endif
 
 unsigned short int uuid_noti_handle = 0;
 uint8 uuid_noti_handle_found = 0;
@@ -671,7 +673,7 @@ void GatewayCentral_processGattEvent(gattMsg_t  **pEventPtr)
 					for(j =0 ; j<UuidLen ;j++)
 					{
 						Report(" 0x%x ",	*(pUuid + j));
-						#if 1
+					#if 1
 						if(pUuid[j] == 0xF1 && pUuid[j+1] == 0xFF) {
 							uuid_1_handle = *pHndl;
 							uuid_1_handle_found = HANDLE_FOUND;
@@ -679,27 +681,37 @@ void GatewayCentral_processGattEvent(gattMsg_t  **pEventPtr)
 						else if(pUuid[j] == 0xF2 && pUuid[j+1] == 0xFF) {
 							uuid_2_handle = *pHndl;
 							uuid_2_handle_found = HANDLE_FOUND;
+							Report("\n\r $$$$$$$$>> uuid_2_handle 0x%x",uuid_2_handle);
 						}
 						else if(pUuid[j] == 0xF3 && pUuid[j+1] == 0xFF) {
 							uuid_3_handle = *pHndl;
 							uuid_3_handle_found = HANDLE_FOUND;
 						}
 						else if(pUuid[j] == 0xF4 && pUuid[j+1] == 0xFF) {
-							uuid_4_handle = *pHndl;
-							uuid_4_handle_found = HANDLE_FOUND;
+								uuid_noti_handle = *pHndl;
+								uuid_noti_handle = uuid_noti_handle + 1; // CHAR CONFIG UUID 0x2902
+								uuid_noti_handle_found = HANDLE_FOUND;
+								Report("\n\r *************** uuid_noti_handle 0x%x",uuid_noti_handle);
 						}
 						#ifdef OLD_D_CC2540
-						else if(pUuid[j] == 0xF5 && pUuid[j+1] == 0xFF) {
-							uuid_5_handle = *pHndl;
-							uuid_5_handle_found = HANDLE_FOUND;
-						}
-						else if(pUuid[j] == 0xF6 && pUuid[j+1] == 0xFF) {
-							uuid_noti_handle = *pHndl;
-							uuid_noti_handle = uuid_noti_handle + 1; // CHAR CONFIG UUID 0x2902
-							uuid_noti_handle_found = HANDLE_FOUND;
-						}
+							else if(pUuid[j] == 0xF4 && pUuid[j+1] == 0xFF) {
+								uuid_4_handle = *pHndl;
+								uuid_4_handle_found = HANDLE_FOUND;
+							}
+							else if(pUuid[j] == 0xF5 && pUuid[j+1] == 0xFF) {
+								uuid_5_handle = *pHndl;
+								uuid_5_handle_found = HANDLE_FOUND;
+							}
+							else if(pUuid[j] == 0xF6 && pUuid[j+1] == 0xFF) {
+								uuid_noti_handle = *pHndl;
+								uuid_noti_handle = uuid_noti_handle + 1; // CHAR CONFIG UUID 0x2902
+								uuid_noti_handle_found = HANDLE_FOUND;
+							}
+						#else
+							
 						#endif
-						#endif
+						
+					#endif
 					}
 					Report("\r\n");
 				}
@@ -712,8 +724,9 @@ void GatewayCentral_processGattEvent(gattMsg_t  **pEventPtr)
 				noti_val[1] = 0x00;
 				
 				current_state &= ~(DEV_NOTI_DONE);
+				Report("\n\r [GW_EVENT]Find Info Done : Procedure Complete **");
 				
-				if (uuid_noti_handle != 0)
+				if (uuid_noti_handle != 0 && uuid_noti_handle_found)
 				{	
 					Report("\n\r [GW_EVENT]Find Info Done :- Enable Notify **");
 					process_WriteHandle(connhandle, uuid_noti_handle, noti_val, 2);

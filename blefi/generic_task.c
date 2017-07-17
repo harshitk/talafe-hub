@@ -83,6 +83,7 @@ OsiSyncObj_t g_NetStatSyncObj;
 #define GW_RANDOM_KEY_LEN   0x6
 #define MAC_ADDR_LEN	    0x6
 
+#define SOCK_INVAID			-1
 
 typedef enum BleCurrState {
 		BLE_SCANRESP,
@@ -126,9 +127,14 @@ unsigned int cfgSize = 0;
 unsigned int autoScanTimeout = 0;
 
 static struct sockaddr_in 	sAddr;
-static int 				iSockID;
-									  //192.168.1.5	//54.71.27.65
-unsigned long  		g_ulDestinationIP = 0xC0A80104; //0x36471B41;//0xC0A80105; // 0xc0a3D9Fa;//0xC0A82BD0; // 0xAC140A07; // 0xC0A82BD0; // 0xc0a3D9Fa;  // 192.168.217.250
+static int 					iSockID = SOCK_INVAID;
+static SlTimeval_t 			timeout;
+static SlFdSet_t 			ReadFds;
+int num_fds_ready = 0;
+volatile uint8 cloud_connected = 0; 
+
+									//192.168.1.5	//54.71.27.65
+unsigned long  		g_ulDestinationIP = 0x344279F1;//0x36471B41;//0xC0A80104; // 0xc0a3D9Fa;//0xC0A82BD0; // 0xAC140A07; // 0xC0A82BD0; // 192.168.217.250
 unsigned int   		g_uiPortNum = 5683;
 
 static uint8 is_KeepAliveAckRecv = 0;
@@ -142,7 +148,7 @@ static short int talafe_uConnId;
 
 ebleCurrState g_bleCurrState = BLE_UNKOWN;
 
-OsiSyncObj_t g_GWUuidWSyncObj;
+OsiSyncObj_t g_GWRespSyncObj;
 
 SlFdSet_t g_ReadFds;
 
@@ -191,6 +197,26 @@ typedef enum{
 	KEEP_ALIVE_ACK = 99,
 	DEVICE_CONTROL = 0x100,
 }e_AppCmdCode;
+
+
+enum TalafeCmd_Type{
+	CMD_ID_LOCK = 0x11,
+	CMD_ID_UNLOCK,
+	CMD_ID_MOD_ADMIN,
+	CMD_ID_ADD_GUEST,
+	CMD_ID_MOD_GUEST,
+	
+	CMD_ID_UNKNOWN = 0xFF,
+};
+
+enum TalafeCmdUUID_Type{
+	AUTH_CMD = 0xF1,
+	SYS_CMD,
+	SYS_CONF,
+	
+	CMD_UUID_UNKNOWN = 0xFF,
+};
+
 /*
  * EXTERN FUNCTIONS
  * */
@@ -203,7 +229,7 @@ extern unsigned int getGenericTaskTicks(void);
 extern void HandleError(unsigned char * filename, unsigned int line_num, unsigned char error);
 
 
-
+extern void clear_ble_data();
 
 extern void fillOtaMetaDefaultCfg(void * otaMeta);
 extern int getSizeofOtaMeta();
@@ -222,12 +248,16 @@ static e_cmd_status process_delkeys_cmd (char* pkt,  unsigned int pktSize);
 static e_cmd_status process_changekeys_cmd(char* pkt,  unsigned int pktSize);
 
 short int t_scan_and_connect();
+void clear_ble_data();
 
 static e_cmd_status process_unlock_cmd (char* pkt,  unsigned int pktSize);
 e_cmd_status process_lock_cmd (char* pkt,  unsigned int pktSize);
 
 
-int ConnectToServer();
+int talafe_connect_to_cloud();
+int talafe_disconnect_to_cloud();
+
+
 int Send_TCPKeepAlive();
 
 void doHandleCmdtimeout();
@@ -237,6 +267,11 @@ OsiSyncObj_t g_GWConSyncObj;
 /*
  *  FUNCTIONS
  * */
+
+int IS_SOCKET_VALID(int sock)
+{
+	return (sock!=SOCK_INVAID);
+}
 
 unsigned int getGenericTaskTicksPerSec()
 {
@@ -256,20 +291,22 @@ int Send_TCPKeepAlive()
 	keepAlivePkt[1] = (KEEP_ALIVE_PKT_LEN & 0xFF);
 	keepAlivePkt[2] = 99;
 	//keepAlivePkt[3] = 01;					// Keep Alive SYN
-	memcpy(keepAlivePkt+3 , "HUB-123456", 10);
+	memcpy(keepAlivePkt+3 , "HUB1234567", 10);
 	
 	Report("\n\r");
-//    for (i = 0; i < KEEP_ALIVE_PKT_LEN ; i++) {
-//    	Report("{%d} ",keepAlivePkt[i]);
-//    }
+    for (i = 0; i < KEEP_ALIVE_PKT_LEN ; i++) {
+    	Report("{%d} ",keepAlivePkt[i]);
+    }
 	Report("\n\r");
-#if 0
+#if 1
 	lRetVal = sl_Send(iSockID, keepAlivePkt, KEEP_ALIVE_PKT_LEN , 0 );
 	if( lRetVal < 0 )
 	{
 		// error
 		Report("\n\rERROR IN SEND KEEP ALIVE PACKET\n\r");
 		sl_Close(iSockID);
+		iSockID = SOCK_INVAID;
+		cloud_connected = 0;
 		ASSERT_ON_ERROR(SEND_ERROR);
 	}
 #endif	
@@ -432,6 +469,8 @@ void GW_EventCb(unsigned char EventType, ErrorFlag_t ErrorFlag,void* EventParams
 												Util_convertBdAddr2Str(pEvent->linkTerm.bdAddr),
 												pEvent->linkTerm.reason);
 			UART_PRINT("\n\r");
+			
+			clear_ble_data();
 		 }
 		 break;
 
@@ -440,11 +479,47 @@ void GW_EventCb(unsigned char EventType, ErrorFlag_t ErrorFlag,void* EventParams
 	 }
 }
 
+void clear_ble_data() {
+
+/*
+	is_connected;
+	lock_conn_handle = 0;
+
+	current_state;
+	lastCmdResponse;
+*/
+	current_state &= ~(DEV_NOTI_DONE);
+	
+	uuid_1_handle = 0;
+	uuid_1_handle_found = 0;
+
+	uuid_2_handle = 0;
+	uuid_2_handle_found = 0;
+
+	uuid_3_handle = 0;
+	uuid_3_handle_found = 0;
+
+#if OLD_D_CC2540
+		uuid_4_handle = 0;
+		uuid_4_handle_found = 0;
+
+		uuid_5_handle = 0;
+		uuid_5_handle_found = 0;
+#endif
+
+	uuid_noti_handle = 0;
+	uuid_noti_handle_found = 0;
+
+	//uuidSem;
+}
+
 void fnPtrScanListAndConn(unsigned char devIndex, char * devName , unsigned char *bleAddr,unsigned char addrType)
 {
 	UART_PRINT("\n\r[GEN_TASK] %d     %s     %s      %d",devIndex ,devName, Util_convertBdAddr2Str(bleAddr), addrType);
 	unsigned char bdAddr[B_ADDR_LEN];
 	
+	//if ( strncmp(Util_convertBdAddr2Str(bleAddr), "0xB0B448BF1403", 14) == 0 )
+	//if ( strncmp(Util_convertBdAddr2Str(bleAddr), "0xB0B448CD9F06", 14) == 0 )
 	if ( strncmp(Util_convertBdAddr2Str(bleAddr), "0xB0B448BF1403", 14) == 0 )
 	{
 		Report("[GEN_TASK] Valied Device Found");
@@ -454,8 +529,8 @@ void fnPtrScanListAndConn(unsigned char devIndex, char * devName , unsigned char
 		talafe_uConnId = GC_LinkEstablish(devIndex , GW_CALL_BLOCKING , (unsigned char*)bdAddr );
 		if(talafe_uConnId >= 0)
 		{
-			UART_PRINT("\n\r[GEN_TASK] Device successfully connected , "
-					"Conn Id - %d BD addr -%s\n\r",talafe_uConnId ,Util_convertBdAddr2Str(bdAddr));
+			UART_PRINT("\n\r[GEN_TASK] @@@@ Device successfully connected , "
+					"Conn Id - %d BD addr -%s @@@@\n\r",talafe_uConnId ,Util_convertBdAddr2Str(bdAddr));
 		}
 		else
 		{
@@ -523,7 +598,14 @@ static int InitSocket()
 	return 1;
 }
 
-int ConnectToServer()
+int talafe_disconnect_to_cloud()
+{
+	Report("\n\r Disconnecting To Server... \n\r");
+	GPIO_IF_LedOff(0x1);
+	cloud_connected = 0;
+}
+
+int talafe_connect_to_cloud()
 {
 	int             iStatus = 0;
 	int             iAddrSize;
@@ -535,8 +617,36 @@ int ConnectToServer()
 	char len[2];
 	char *rcvBuf;
 	unsigned int bufLen = 0;
+	long nonBlocking = 1;
+    int iSetOptStatus;
+	int bytes_received = 0; 
+	
+	Report("\n\r ***** talafe_connect_to_cloud *****\n\r");
+	
+	if (IS_SOCKET_VALID(iSockID)) {
+		Report("\n\r Disconnecting To Server... \n\r");
+		if (cloud_connected) {
+			
+		}
+		if (sl_Close(iSockID) < 0) {
+			Report("\n\r Disconnecting To Server... Failed in CLOSE\n\r");
+		}
+		Report("\n\r Disconnecting To Server... SUCCESS\n\r");
+		iSockID = SOCK_INVAID;
+	}
+  
+	SL_FD_ZERO(&ReadFds);
+	
+	timeout.tv_sec = 3;
+    timeout.tv_usec = 0;
 	
 	iAddrSize = sizeof(SlSockAddrIn_t);
+	
+	Report("Socket Init\n\r");
+
+	/* BLOCKING READ WRITE ENABLE */
+	//nonBlocking = 0;
+	//iSetOptStatus = sl_SetSockOpt(iSockID, SL_SOL_SOCKET, SL_SO_NONBLOCKING, &nonBlocking, sizeof(nonBlocking));
 
 	// creating a TCP socket
 	iSockID = sl_Socket(SL_AF_INET,SL_SOCK_STREAM, 0);
@@ -546,7 +656,7 @@ int ConnectToServer()
 		ASSERT_ON_ERROR(SOCKET_CREATE_ERROR);
 	}
 	
-
+	
     // connecting to TCP server
     iStatus = sl_Connect(iSockID, ( SlSockAddr_t *)&sAddr, iAddrSize);
     if( iStatus < 0 )
@@ -556,8 +666,17 @@ int ConnectToServer()
         sl_Close(iSockID);       
         ASSERT_ON_ERROR(CONNECT_ERROR);
     }
-	Report("Connecting To Server... Success Sending Cmd\n\r");
+	Report("Connecting To Server [%d]... Success Sending Cmd\n\r",iSockID);
 
+	/* NON BLOCKING READ WRITE ENABLE */
+	nonBlocking = 1;
+	iSetOptStatus = sl_SetSockOpt(iSockID, SL_SOL_SOCKET, SL_SO_NONBLOCKING, &nonBlocking, sizeof(nonBlocking));
+	if( iSetOptStatus < 0 )
+    {
+        ASSERT_ON_ERROR(sl_Close(iSockID));
+        ASSERT_ON_ERROR(SOCKET_OPT_ERROR);
+    }
+	
 	/* Set CMD ID */
 	bufLen = strlen(buffer);
 	buffer[0] = 0;//(( bufLen >> 8 ) && 0xFF );
@@ -572,14 +691,37 @@ int ConnectToServer()
     {
         // error
         sl_Close(iSockID);
+		iSockID = SOCK_INVAID;
         ASSERT_ON_ERROR(SEND_ERROR);
     }
 
-    lRetVal = sl_Recv(iSockID,len,sizeof(char)*2,0);
-    if (lRetVal <= 0 ) {
+    SL_FD_SET(iSockID, &ReadFds);
+
+	num_fds_ready = sl_Select(iSockID + 1, &ReadFds, NULL, NULL, &timeout);
+
+	if (0 < num_fds_ready) 
+	{ 
+		if (FD_ISSET(iSockID, &ReadFds)) 
+		{ 
+		  // recv returns negative numbers on error 
+		  bytes_received = sl_Recv(iSockID,len,sizeof(char)*2,0);
+		  if (bytes_received <= 0 ) {
+				sl_Close(iSockID);
+				
+				iSockID = SOCK_INVAID;
+				Report("Read Data Error\n\r");
+				return -1;
+			}
+		  Report("bytes_received %d",bytes_received); 
+		} 
+	} 
+	else if (0 > num_fds_ready) 
+	{ 
+		// error from select 
 		sl_Close(iSockID);
-    	Report("Read Data Error\n\r");
-    	return -1;
+		iSockID = SOCK_INVAID;
+		Report("select Error %d",num_fds_ready); 
+		return num_fds_ready; 
 	}
 
 	bufLen = len[0];
@@ -589,10 +731,9 @@ int ConnectToServer()
 	if ( bufLen < 1)
 	{
 		sl_Close(iSockID);
-    	Report("Read Data LEN >2 %d\n\r", bufLen);
+		iSockID = SOCK_INVAID;
+    	Report("Read Data LEN < 2 %d\n\r", bufLen);
 	}
-	
-
 	
     Report("Data to be Read [%d] [%d] [%d] [%d]", len[0], len[1], lRetVal, bufLen);
 	
@@ -610,6 +751,7 @@ int ConnectToServer()
     	Report("{%c:%x} ",rcvBuf[i],rcvBuf[i]);
     }
 	
+	GPIO_IF_LedOn(0x1);
 	osi_SyncObjSignal(&g_GWConSyncObj);
     Report("\n\r");
 	free(rcvBuf);
@@ -662,6 +804,23 @@ void GwKeepAliveTask(void *pvParameters)
 	}	
 }
 
+#if 0
+bool handle_received_message(void)
+{
+	//last_message_millis = callback_millis();
+	expecting_ping_ack = false;
+	int len = queue[0] << 8 | queue[1];
+	if (len > QUEUE_SIZE) { // TODO add sanity check on data, e.g. CRC
+	  return false;
+	}
+	if (0 > blocking_receive(queue, len))
+	{
+		// error
+		return false;
+	}
+}
+#endif
+
 void GwGenericTask(void *pvParameters)
 {
     volatile unsigned char LoopVar = 0xFF;
@@ -674,55 +833,86 @@ void GwGenericTask(void *pvParameters)
 	char pktCmdID = 0x0;
 	char *pkt;
 	unsigned int dataLen = 0, i = 0;
+	unsigned int timestamp = 0;
 	
-	volatile uint8 sockConn = 0; 
 	//struct Packet pkt;
 	
-    osi_SyncObjWait(&g_NetStatSyncObj,OSI_WAIT_FOREVER); //Wait until the network is ON.
+    //osi_SyncObjWait(&g_NetStatSyncObj,OSI_WAIT_FOREVER); //Wait until the network is ON.
  
-	Report("\r Connecting To Server \n\r");
-	ConnectToServer();
-	Report("Connected To Server Scanning Now\n\r");
     //GC_Scan(GW_CALL_BLOCKING);
+	/*
+	 * Scan and Connect to BLE TALAFE DEVICE
+	 */ 
+	t_scan_and_connect();
 	Report("Scanning DONE\n\r");
 	while (LoopVar) 
 	{
 		Report("Waiting for Server Connect EVENT\n\r");
-		osi_SyncObjWait(&g_GWConSyncObj,OSI_WAIT_FOREVER); //Wait until the Connetionn with Server is ON.
-		sockConn = 1;
+		/* 
+		 * Wait until the Connetionn with Server is ON.
+		 * call signalWlanConnectEvent() to signal this wait 
+		 * On Any Socket ERROR or server disconnect 
+		 * call signalWlanConnectEvent() to resume from here
+		 *
+		 */
+		osi_SyncObjWait(&g_NetStatSyncObj,OSI_WAIT_FOREVER); 
+		if (talafe_connect_to_cloud() < 0) {
+			Report("Cloud Connect Failed\n\r");
+			continue;
+		}
 		
-		while(sockConn)
-		{
-			static int timeout = 0;
+		cloud_connected = 1;
+		SL_FD_ZERO(&ReadFds);
+		timeout.tv_sec = 3;
+		timeout.tv_usec = 0;
+		SL_FD_SET(iSockID, &ReadFds);
 			
+		while(cloud_connected)
+		{
 			dataLen = 0x0;
 			pktLen[0] = 0x0;
 			pktLen[1] = 0x0;
 			Report("\n\rWaiting for Packet\n\r");
 			
 			osi_Sleep(GENERIC_TASK_FREQ_MS);
-			
-		#if 0
-			timeout++;
-			
-			if (timeout == 20) {
-				if (!is_KeepAliveAckRecv) {
-					Report("\r Keep Alive SYN Timeout\n\r");
-					sl_Close(iSockID); 
-					timeout = 0;
-					break;
-				}
-				timeout = 0;
-				Send_TCPKeepAlive();
-			}
-		#endif
-		
-			lRetVal = sl_Recv(iSockID,pktLen,sizeof(char)*2,0);
-			if (lRetVal <= 0) {
-				Report("Read Data Error\n\r");
-				sl_Close(iSockID); 
-				sockConn = 0;
+
+			num_fds_ready = sl_Select(iSockID + 1, &ReadFds, NULL, NULL, &timeout);
+
+			if (0 < num_fds_ready) 
+			{ 
+				if (FD_ISSET(iSockID, &ReadFds)) 
+				{ 
+				  // recv returns negative numbers on error 
+				  lRetVal = sl_Recv(iSockID,pktLen,sizeof(char)*2,0);
+				  if (lRetVal <= 0 ) {
+						sl_Close(iSockID);
+						GPIO_IF_LedOff(0x1);
+						iSockID = SOCK_INVAID;
+						Report("Read Data Error In rcv LEN\n\r");
+						cloud_connected = 0;
+						break;
+					}
+				  Report("bytes_received %d",lRetVal); 
+				} 
+			} 
+			else if (0 > num_fds_ready) 
+			{ 
+				// error from select 
+				sl_Close(iSockID);
+				GPIO_IF_LedOff(0x1);
+				iSockID = SOCK_INVAID;
+				cloud_connected = 0;
+				Report("select Error %d\n\r",num_fds_ready); 
 				break;
+			}
+			else {
+				Report("Select Timeout\n\r");
+				timestamp += 3;
+				if (timestamp > 100) {
+					timestamp = 0;
+					Send_TCPKeepAlive();
+				}
+				continue;
 			}
 			
 			if(lRetVal < 2)
@@ -730,24 +920,26 @@ void GwGenericTask(void *pvParameters)
 			
 			dataLen = pktLen[0];
 			dataLen = (dataLen << 8) | pktLen[1];
-			if (dataLen)
+			if (dataLen && dataLen > 2)
 				dataLen -= 2;
 			else {
 				Report("Invalid data length \n\r"); 
-				break;
+				continue;
 			}
 			Report("Data to be Read [%d] [%d]\n\r", dataLen, pktLen[1]);
 
 			pkt = (char *)malloc(sizeof(char) * dataLen);
 			if (!pkt) {
 				Report("Malloc failed\n\r");       
-				break;
+				continue;
 			}
 			lRetVal = sl_Recv(iSockID,pkt,(sizeof(char)*dataLen),0);
 			if (lRetVal <= 0) {
-				Report("Read Data Error\n\r");
-				sl_Close(iSockID); 
-				sockConn = 0;				
+				Report("Read Data Error No Data to be read in Packet\n\r");
+				sl_Close(iSockID);
+				GPIO_IF_LedOff(0x1);
+				iSockID = SOCK_INVAID;
+				cloud_connected = 0;				
 				free(pkt);
 				break;
 			}	
@@ -760,70 +952,65 @@ void GwGenericTask(void *pvParameters)
 
 static void parseResponse(int len, char* buffer)
 {
+	Report("\n\r parseResponse 0x%02x", buffer[0]);
 	switch(buffer[0]) {
-		case AUTH_MASTER_KEY:
-		Report("\n\r AUTH_MASTER_KEY... Random key");
-		if (buffer[1] == 0x01) {
-			memcpy(gwRandomKey, buffer+2, GW_RANDOM_KEY_LEN);
-			current_state |= (DEV_NOTI_DONE | RANDOM_KEY_SET);
-		} else if(buffer[1] == 0x02) {
-			current_state &= ~(RANDOM_KEY_SET);
-		}
-		break;
-		
-		case AUTH_MASTER_R_KEY:
-		Report("\n\r AUTH_MASTER_KEY... Random key");
-		if (buffer[1] == 0x01) {
-			memcpy(gwRandomKey, buffer+2, GW_RANDOM_KEY_LEN);
-			current_state |= (DEV_NOTI_DONE | RANDOM_KEY_SET);
-		} else if(buffer[1] == 0x02) {
-			current_state &= ~(RANDOM_KEY_SET);
-		}
+		case AUTH_CMD:
+		Report("\n\r AUTH CMD RESPONSE");
 		
 		break;
-		case ADD_GUEST:
 		
-		break;
-		case DEL_GUEST:
-		
-		break;
-		case CHANGE_GUEST_INFO:
-		
-		break;
-		case CHANGE_MASTER_KEY:
-		
-		break;
-		case AUTO_LOCK_SETTING:
-		
-		break;
-		case CHANGE_VOL_LEVEL:
-		
-		break;
-		case UNLOCK:
-		Report("\n\r Unlock Response");
-		if (buffer[1] == 0x01) {
-			Report("\n\r Success");
-			lastCmdResponse = CMD_EXE_SUCCESS;
-			osi_SyncObjSignal(&g_GWUuidWSyncObj);
+		case SYS_CMD:
+		Report("\n\r SYS CMD RESPONSE");
+		switch(buffer[1]) {
+			case CMD_ID_LOCK:
+				if (current_state & DEV_CMD_WAITING_FOR_RESPONSE) {
+					current_state &= ~DEV_CMD_WAITING_FOR_RESPONSE; // Clear WAIT RESP BIT
+					if (buffer[2] == 0x01) 
+						lastCmdResponse = CMD_EXE_SUCCESS;
+					else if (buffer[2] == 0x02)
+						lastCmdResponse = CMD_EXE_TIMEOUT;
+					else
+						lastCmdResponse = CMD_EXE_FAILED;
+					
+					Report("\n\r LOCK Cmd Resp [%d]", lastCmdResponse);
+					osi_SyncObjSignal(&g_GWRespSyncObj);
+				}	
+				break;
+
+			case CMD_ID_UNLOCK:
+				if (current_state & DEV_CMD_WAITING_FOR_RESPONSE) {
+					current_state &= ~DEV_CMD_WAITING_FOR_RESPONSE; // Clear WAIT RESP BIT
+					if (buffer[2] == 0x01) 
+						lastCmdResponse = CMD_EXE_SUCCESS;
+					else if (buffer[2] == 0x02)
+						lastCmdResponse = CMD_EXE_TIMEOUT;
+					else
+						lastCmdResponse = CMD_EXE_FAILED;
+					
+					Report("\n\r LOCK Cmd Resp [%d]", lastCmdResponse);
+					osi_SyncObjSignal(&g_GWRespSyncObj);
+				}
+				break;
+
+			case CMD_ID_MOD_ADMIN:
+				
+				break;
+
+			case CMD_ID_ADD_GUEST:
+				
+				break;
+
+			case CMD_ID_MOD_GUEST:
+				
+				break;
+				
+			default:
 			
-		} else if(buffer[1] == 0x02) {
-			Report("\n\r Failed");
-			lastCmdResponse = CMD_EXE_FAILED;
-			osi_SyncObjSignal(&g_GWUuidWSyncObj);
+				break;
 		}
-			
-		break;
-		case LOCK:
-		Report("\n\r Lock Response");
-		if (buffer[1] == 0x01) {
-			Report("\n\r Success");
-			lastCmdResponse = CMD_EXE_SUCCESS;
-		}
-		break;
-		case CURRENT_STATUS_ADMIN:
 		
 		break;
-		case CURRENT_STATUD_GUEST:
+		case SYS_CONF:
 		
 		break;
 		
@@ -920,7 +1107,7 @@ static void Process_cmd(char cmdID, char* pkt, unsigned int pktSize)
 
 e_cmd_status process_addkeys_cmd (char* pkt,  unsigned int pktSize)
 {
-	if (uuid_2_handle_found && (current_state & (DEV_NOTI_DONE | RANDOM_KEY_SET))) {
+	if (uuid_2_handle_found && (current_state & DEV_NOTI_DONE)) {
 		unsigned char buffer[CMD_05_LEN];
 		uint8 noOfKeys = pkt[27];
 		uint8 keyIDX = pkt[28];
@@ -963,7 +1150,7 @@ e_cmd_status process_addkeys_cmd (char* pkt,  unsigned int pktSize)
 
 e_cmd_status process_delkeys_cmd (char* pkt,  unsigned int pktSize)
 {
-	if (uuid_2_handle_found && (current_state & (DEV_NOTI_DONE | RANDOM_KEY_SET))) {
+	if (uuid_2_handle_found && (current_state & DEV_NOTI_DONE )) {
 		unsigned char buffer[CMD_06_LEN];
 		uint8 noOfKeys = pkt[27];
 		uint8 keyIDX = pkt[28];
@@ -984,7 +1171,7 @@ e_cmd_status process_delkeys_cmd (char* pkt,  unsigned int pktSize)
 		
 		lastCmdResponse = CMD_EXE_TIMEOUT;
 	    current_state |= DEV_CMD_WRITE_EXECUTING;    // Set CMD Executing BIT
-		//osi_SyncObjWait(&g_GWUuidWSyncObj, OSI_WAIT_FOREVER); //Wait until the CMD Response Recives;
+		osi_SyncObjWait(&g_GWRespSyncObj, OSI_WAIT_FOREVER); //Wait until the CMD Response Recives;
 	    
 		current_state &= ~(DEV_CMD_EXECUTING);  // Clear CMD Executing BIT
 		
@@ -1006,7 +1193,7 @@ e_cmd_status process_delkeys_cmd (char* pkt,  unsigned int pktSize)
 
 e_cmd_status process_changekeys_cmd (char* pkt,  unsigned int pktSize)
 {
-	if (uuid_2_handle_found && (current_state & (DEV_NOTI_DONE | RANDOM_KEY_SET))) {
+	if (uuid_2_handle_found && (current_state & DEV_NOTI_DONE)) {
 		unsigned char buffer[CMD_07_LEN];
 		uint8 noOfKeys = pkt[27];
 		uint8 keyIDX = pkt[28];
@@ -1050,7 +1237,7 @@ e_cmd_status process_changekeys_cmd (char* pkt,  unsigned int pktSize)
 
 e_cmd_status process_changeMkey_cmd (char* pkt,  unsigned int pktSize)
 {
-	if (uuid_2_handle_found && (current_state & (DEV_NOTI_DONE | RANDOM_KEY_SET))) {
+	if (uuid_2_handle_found && (current_state & DEV_NOTI_DONE )) {
 		unsigned char buffer[CMD_08_LEN];
 		uint8 noOfKeys = pkt[27];
 		uint8 keyIDX = pkt[28];
@@ -1082,33 +1269,44 @@ e_cmd_status process_changeMkey_cmd (char* pkt,  unsigned int pktSize)
 	}
 }
 
-/* UNLOCK CMD CMD 11*/
-#define CMD_11_LEN					13
+/* LOCK CMD CMD 11*/
 
-#define CMD_11						11
-#define CMD_11_CMD_IDX				0x0
-#define CMD_11_RANDOM_KEY_IDX		0x1
-#define CMD_11_MAC_ADD_IDX			0x7
+#define CMD_11_LEN					10
+
+#define CMD_11						0x11
+#define CMD_11_IDX					0x1
+#define CMD_11_MAC_ADD_IDX			0x2
+
+
+/* UnLOCK CMD 12*/
+#define CMD_12_LEN				10 // OLD_D_CC2540 --> 7
+
+#define CMD_12						0x12
+#define CMD_12_IDX					0x1
+#define CMD_12_MAC_ADD_IDX			0x2
 
 e_cmd_status process_unlock_cmd (char* pkt,  unsigned int pktSize)
 {
-	if (uuid_4_handle_found && (current_state & (DEV_NOTI_DONE | RANDOM_KEY_SET))) {
-		unsigned char buffer[CMD_11_LEN];
+	if (uuid_2_handle_found && (current_state & DEV_NOTI_DONE)) {
+		unsigned char buffer[CMD_12_LEN] = {0,0,0,0,0,0,0,0,0,0};
 		int loop = 0;
-		buffer[CMD_11_CMD_IDX] = CMD_11;
-		memcpy(buffer+CMD_11_RANDOM_KEY_IDX, gwRandomKey, GW_RANDOM_KEY_LEN);
-		memcpy(buffer+CMD_11_MAC_ADD_IDX, gw_wlan_mac, MAC_ADDR_LEN);
-
-		process_WriteHandle(lock_conn_handle, uuid_4_handle, buffer, CMD_11_LEN);
+	#if OLD_D_CC2540	
+		buffer[CMD_12_IDX] = CMD_12;
+		memcpy(buffer+CMD_12_MAC_ADD_IDX, gw_wlan_mac, MAC_ADDR_LEN);
+	#endif
+		buffer[0] = '@';
+		buffer[CMD_12_IDX] = CMD_12;
 		
-		Message("\r\nUnlock :- ");
-		for(loop = 0 ; loop < CMD_11_LEN ; loop++)
+		memcpy(buffer+CMD_11_MAC_ADD_IDX, "123456", MAC_ADDR_LEN);
+		
+		process_WriteHandle(lock_conn_handle, uuid_2_handle, buffer, CMD_12_LEN);
+		Message("\r\nLock :- ");
+		for(loop = 0 ; loop < CMD_12_LEN ; loop++)
 			Report("[%x] ", buffer[loop]);
 		Message("\r\n");
-		
 		lastCmdResponse = CMD_EXE_TIMEOUT;
-	    current_state |= DEV_CMD_WRITE_EXECUTING;    // Set CMD Executing BIT
-		//osi_SyncObjWait(&g_GWUuidWSyncObj, OSI_WAIT_FOREVER); //Wait until the CMD Response Recives;
+	    current_state |= (DEV_CMD_EXECUTING | DEV_CMD_WAITING_FOR_RESPONSE);    // Set CMD Executing BIT
+		osi_SyncObjWait(&g_GWRespSyncObj, OSI_WAIT_FOREVER); //Wait until the CMD Response Recives;
 	    
 		current_state &= ~(DEV_CMD_EXECUTING);  // Clear CMD Executing BIT
 		
@@ -1118,30 +1316,29 @@ e_cmd_status process_unlock_cmd (char* pkt,  unsigned int pktSize)
 	}
 }
 
-/* LOCK CMD 12*/
-#define CMD_12_LEN				7
-
-#define CMD_12						12
-#define CMD_12_IDX				0x0
-#define CMD_12_MAC_ADD_IDX			0x1
 
 e_cmd_status process_lock_cmd (char* pkt,  unsigned int pktSize)
 {
-	if (uuid_4_handle_found && (current_state & (DEV_NOTI_DONE | RANDOM_KEY_SET))) {
-		unsigned char buffer[CMD_12_LEN];
+	if (uuid_2_handle_found && (current_state & DEV_NOTI_DONE)) {
+		unsigned char buffer[CMD_11_LEN] = {0,0,0,0,0,0,0,0,0,0};
 		int loop = 0;
-		
+	#if OLD_D_CC2540	
 		buffer[CMD_12_IDX] = CMD_12;
 		memcpy(buffer+CMD_12_MAC_ADD_IDX, gw_wlan_mac, MAC_ADDR_LEN);
-
-		process_WriteHandle(lock_conn_handle, uuid_4_handle, buffer, CMD_12_LEN);
+	#endif
+		buffer[0] = '@';
+		buffer[CMD_11_IDX] = CMD_11;
+		
+		memcpy(buffer+CMD_11_MAC_ADD_IDX, "123456", MAC_ADDR_LEN);
+		
+		process_WriteHandle(lock_conn_handle, uuid_2_handle, buffer, CMD_11_LEN);
 		Message("\r\nLock :- ");
-		for(loop = 0 ; loop < CMD_12_LEN ; loop++)
+		for(loop = 0 ; loop < CMD_11_LEN ; loop++)
 			Report("[%x] ", buffer[loop]);
 		Message("\r\n");
 		lastCmdResponse = CMD_EXE_TIMEOUT;
-	    current_state |= DEV_CMD_WRITE_EXECUTING;    // Set CMD Executing BIT
-		//osi_SyncObjWait(&g_GWUuidWSyncObj, OSI_WAIT_FOREVER); //Wait until the CMD Response Recives;
+	    current_state |= (DEV_CMD_EXECUTING | DEV_CMD_WAITING_FOR_RESPONSE);    // Set CMD Executing BIT
+		osi_SyncObjWait(&g_GWRespSyncObj, OSI_WAIT_FOREVER); //Wait until the CMD Response Recives;
 	    
 		current_state &= ~(DEV_CMD_EXECUTING);  // Clear CMD Executing BIT
 		
@@ -1410,7 +1607,7 @@ void GW_GenericTask_Init()
   //
   osi_SyncObjCreate(&g_GWGenSyncObj);
   osi_SyncObjCreate(&g_GWConSyncObj);
-  osi_SyncObjCreate(&g_GWUuidWSyncObj);
+  osi_SyncObjCreate(&g_GWRespSyncObj);
   
   //
   // Create sync object to signal Sl_Start and Wlan Connect complete
@@ -1419,8 +1616,10 @@ void GW_GenericTask_Init()
   /*Initialize Gateway Button*/
   //  Button2Init();
 
+  //NetworkInit();
+
   //Wifi_GetMAC(gw_wlan_mac);
-  Report("System MAC ADD [0x%2x:0x%2x:0x%2x:0x%2x:0x%2x:0x%2x]\n", gw_wlan_mac[0], gw_wlan_mac[1], gw_wlan_mac[2], gw_wlan_mac[3], gw_wlan_mac[4], gw_wlan_mac[5]);
+  Report("System MAC ADD [0x%2x:0x%2x:0x%2x:0x%2x:0x%2x:0x%2x]\n\r", gw_wlan_mac[0], gw_wlan_mac[1], gw_wlan_mac[2], gw_wlan_mac[3], gw_wlan_mac[4], gw_wlan_mac[5]);
   InitSocket();
   //
   // GW Generic Task
@@ -1542,14 +1741,29 @@ void enableAutoconnect()
 }
 
 
-void signalWLANConnect()
+void signalWlanConnectEvent()
 {
 	//
 	// Signal Wlan COnnect
 	//
 	osi_SyncObjSignal(&g_NetStatSyncObj);
+	
+//	Report("\r Connecting To Server \n\r");
+//	talafe_connect_to_cloud();
+//	Report("Connected To Server Scanning Now\n\r");
 }
 
+void signalWlanDisconnectEvent()
+{
+	Report("\r Disconnecting To Server \n\r");
+	talafe_disconnect_to_cloud();
+}
+
+
+void sockDisconnect()
+{
+	
+}
 //*****************************************************************************
 //
 // Close the Doxygen group.

@@ -130,7 +130,7 @@ LIB_OUTPUTS__QUOTED += \
 all: cli.a
 
 dependents:
-	-cd C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/ti_rtos/ti_rtos_config/ccs/Default && $(MAKE) all
+	-cd C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/ti_rtos/ti_rtos_config/ccs/Default && $(MAKE) clean all
 
 # Tool invocations
 cli.a: $(OBJS) C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/ti_rtos/ti_rtos_config/ccs/Default/configPkg/linker.cmd

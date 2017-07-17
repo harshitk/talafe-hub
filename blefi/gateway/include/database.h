@@ -57,9 +57,9 @@
 
 // Discovery states
 
-#define   DEV_NOTI_DONE  		0x01
-#define   DEV_CMD_EXECUTING		0x02
-#define   RANDOM_KEY_SET		0x04
+#define		DEV_NOTI_DONE  					0x01
+#define		DEV_CMD_EXECUTING				0x02
+#define		DEV_CMD_WAITING_FOR_RESPONSE	0x04
 
 #define   HANDLE_FOUND			0x01
 #define   HANDLE_NOT_FOUND		0x00
