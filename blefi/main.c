@@ -160,7 +160,9 @@ int main()
 
     // Start the task scheduler
     osi_start();
-    while(LoopVar) {
+    while(LoopVar);
+#if 0
+    {
 		
 		if (link_up) {
 			if (!cloud_connected){
@@ -169,7 +171,7 @@ int main()
 			osi_Sleep(10000);
 		}
 	}
-
+#endif
     // we will never reach here
     return 0;
 }

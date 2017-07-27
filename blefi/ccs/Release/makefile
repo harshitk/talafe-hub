@@ -155,7 +155,7 @@ BIN_OUTPUTS__QUOTED += \
 all: blefi.out
 
 dependents:
-	-cd C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/ti_rtos/ti_rtos_config/ccs/Default && $(MAKE) all
+	-cd C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/ti_rtos/ti_rtos_config/ccs/Default && $(MAKE) clean all
 
 # Tool invocations
 blefi.out: $(OBJS) $(CMD_SRCS) $(GEN_CMDS) C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/ti_rtos/ti_rtos_config/ccs/Default/configPkg/linker.cmd

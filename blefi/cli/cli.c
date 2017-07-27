@@ -51,7 +51,7 @@ cli_cmd_t cmd_tbl[MAX_COMMANDS_SUPPORTED];
 unsigned char cli_cmd_count = 0;
 
 extern void KickGenericTask();
-extern void signalWlanConnectEvent();
+extern void signalCloudConnectEvent();
 extern int talafe_disconnect_to_cloud();
 
 void CliPuts(char *str)
@@ -346,7 +346,7 @@ static void CliInitCommandList()
 	CliAddCmd("autoconlist", "pairlist","List of autoconnect devices",DoPairList);
 	CliAddCmd("rmautocon", "unpair","remove from autoconnect list",DoUnPair);
 	CliAddCmd("autocon", "autocon 0/1","Autoconnect Enable/Disable",DoAutoconnect);
-	CliAddCmd("connect", "connect","connect to server",signalWlanConnectEvent);
+	CliAddCmd("connect", "connect","connect to server",signalCloudConnectEvent);
 	CliAddCmd("close", "close","close to server",talafe_disconnect_to_cloud);
 	CliAddCmd("test", "test","test",Test_cmd);
 

@@ -59,6 +59,8 @@
 #include "gateway_cmds.h"
 #include "datatypes.h"
 #include "database.h"
+#include "common.h"
+
 #define BLEFI_CFG_FILE "blefi.cfg"
 
 blefiCfg_t blefiCfgRec;
@@ -70,8 +72,11 @@ OsiSyncObj_t g_GWGenSyncObj;
 /* Net COnfig Sync Object */
 OsiSyncObj_t g_NetStatSyncObj;
 
-#define GENERIC_TASK_STACK_SIZE	2048
-#define GENERIC_TASK_FREQ_MS 250
+#define GENERIC_TASK_STACK_SIZE		2048
+#define GENERIC_TASK_FREQ_MS 		250
+#define GENERIC_TASK_CLOUD_CONN_MS 	5000
+#define GENERIC_TASK_FREQ_MS 		250
+
 #define AUTO_SCAN_DEFAULT 0 //in secs
 #define AUTO_SCAN_MAX_VALUE 300
 #define AUTO_SCAN_MIN_VALUE 30
@@ -119,6 +124,8 @@ extern uint8 uuid_5_handle_found;
 extern unsigned short int uuid_noti_handle;
 extern uint8 uuid_noti_handle_found;
 
+extern unsigned long  g_ulStatus;//SimpleLink Status
+
 extern device_db_t * DeviceRec[10];
 unsigned char gw_wlan_mac[SL_MAC_ADDR_LEN] = {0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6};
 unsigned char gwRandomKey[GW_RANDOM_KEY_LEN];
@@ -134,7 +141,7 @@ int num_fds_ready = 0;
 volatile uint8 cloud_connected = 0; 
 
 									//192.168.1.5	//54.71.27.65
-unsigned long  		g_ulDestinationIP = 0x344279F1;//0x36471B41;//0xC0A80104; // 0xc0a3D9Fa;//0xC0A82BD0; // 0xAC140A07; // 0xC0A82BD0; // 192.168.217.250
+unsigned long  		g_ulDestinationIP = 0x36471B41;//0x36471B41;//0xC0A80104; // 0xc0a3D9Fa;//0xC0A82BD0; // 0xAC140A07; // 0xC0A82BD0; // 192.168.217.250
 unsigned int   		g_uiPortNum = 5683;
 
 static uint8 is_KeepAliveAckRecv = 0;
@@ -278,7 +285,7 @@ unsigned int getGenericTaskTicksPerSec()
 	return(1000/GENERIC_TASK_FREQ_MS);
 }
 
-#define KEEP_ALIVE_PKT_LEN 		13
+#define KEEP_ALIVE_PKT_LEN 		3
 int Send_TCPKeepAlive()
 {
 	long lRetVal = -1;
@@ -291,7 +298,7 @@ int Send_TCPKeepAlive()
 	keepAlivePkt[1] = (KEEP_ALIVE_PKT_LEN & 0xFF);
 	keepAlivePkt[2] = 99;
 	//keepAlivePkt[3] = 01;					// Keep Alive SYN
-	memcpy(keepAlivePkt+3 , "HUB1234567", 10);
+	//memcpy(keepAlivePkt+3 , "HUB1234567", 10);
 	
 	Report("\n\r");
     for (i = 0; i < KEEP_ALIVE_PKT_LEN ; i++) {
@@ -531,6 +538,9 @@ void fnPtrScanListAndConn(unsigned char devIndex, char * devName , unsigned char
 		{
 			UART_PRINT("\n\r[GEN_TASK] @@@@ Device successfully connected , "
 					"Conn Id - %d BD addr -%s @@@@\n\r",talafe_uConnId ,Util_convertBdAddr2Str(bdAddr));
+			
+			/* Find SVC */
+			DB_GATT_FindCharDescs(0, 1, 49); // HACK
 		}
 		else
 		{
@@ -774,7 +784,7 @@ struct Packet {
 	char 	cmdId;
 	char* 	data;
 };
-
+#if 0
 void GwKeepAliveTask(void *pvParameters)
 {
 	volatile unsigned char LoopVar = 0xFF;
@@ -804,6 +814,37 @@ void GwKeepAliveTask(void *pvParameters)
 	}	
 }
 
+#endif
+void GwKeepAliveTask(void *pvParameters)
+{
+	volatile unsigned char LoopVar = 0xFF;
+	static int timeout = 0;
+	is_KeepAliveAckRecv = 1;
+
+	while (LoopVar)
+	{
+		/* 3 SECOND SLEEP */
+		osi_Sleep(GENERIC_TASK_CLOUD_CONN_MS);
+		/* Check If IP Aquired and Cloud is Connected or NOT */
+		if ( IS_IP_ACQUIRED(g_ulStatus)) {
+			/* Some small delay before checking Cloud is connected or not
+			 * TO AVOID STARTUP CONFLICT ISSUE (100 MS)
+			 */
+			osi_Sleep(100);
+			if(!cloud_connected) {
+				/* Send Cloud Connect Signal EVENT */
+				signalCloudConnectEvent();
+			} 
+			/* SCAN and Connect with BLE device */
+			else if (g_bleCurrState != BLE_LINKTERMINATE && 
+					(g_bleCurrState != BLE_SCANRESP && 
+					 g_bleCurrState != BLE_SCANCOMP)){
+				/* SCAN and Connect */
+				t_scan_and_connect();
+			}
+		}
+	}
+}
 #if 0
 bool handle_received_message(void)
 {
@@ -850,9 +891,9 @@ void GwGenericTask(void *pvParameters)
 		Report("Waiting for Server Connect EVENT\n\r");
 		/* 
 		 * Wait until the Connetionn with Server is ON.
-		 * call signalWlanConnectEvent() to signal this wait 
+		 * call signalCloudConnectEvent() to signal this wait 
 		 * On Any Socket ERROR or server disconnect 
-		 * call signalWlanConnectEvent() to resume from here
+		 * call signalCloudConnectEvent() to resume from here
 		 *
 		 */
 		osi_SyncObjWait(&g_NetStatSyncObj,OSI_WAIT_FOREVER); 
@@ -1631,7 +1672,7 @@ void GW_GenericTask_Init()
                   1,
                   NULL );
 
-#if 0
+#if 1
   //
   // GW KEEP ALIVE
   //  
@@ -1741,7 +1782,7 @@ void enableAutoconnect()
 }
 
 
-void signalWlanConnectEvent()
+void signalCloudConnectEvent()
 {
 	//
 	// Signal Wlan COnnect

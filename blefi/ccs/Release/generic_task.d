@@ -183,6 +183,7 @@ generic_task.obj: C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/npi/i
 generic_task.obj: C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/npi/include/ble_events.h
 generic_task.obj: C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/npi/include/gatt.h
 generic_task.obj: C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/gateway/include/database.h
+generic_task.obj: C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/common/common.h
 
 C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/generic_task.c: 
 C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/inc/hw_types.h: 
@@ -367,3 +368,4 @@ C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/npi/include/l2cap.h:
 C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/npi/include/ble_events.h: 
 C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/npi/include/gatt.h: 
 C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/blefi/gateway/include/database.h: 
+C:/ti/BleToWifiGateway_1.0.0_20_oct_16/src/example/common/common.h: 

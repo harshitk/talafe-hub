@@ -131,7 +131,7 @@ extern void HttpPostToken( SlHttpServerEvent_t *pSlHttpServerEvent,
 #endif
 
 
-extern void signalWlanConnectEvent();
+extern void signalCloudConnectEvent();
 extern void signalWlanDisconnectEvent();
 extern void BlinkLed(LedNum LedInstance,unsigned short iBlinkCount, LedBlinkrate iBlinkRate);
 
@@ -411,7 +411,7 @@ void SimpleLinkNetAppEventHandler(SlNetAppEvent_t *pNetAppEvent)
             /* 
             	 MqttIpAcquiredPostMsg();
             */
-            signalWlanConnectEvent();
+            signalCloudConnectEvent();
 
 
         }
